@@ -1,48 +1,49 @@
-name: Deploy Website on k8s
+name: Build and Push Docker Image
 
 on:
   push:
     branches: [ "main" ]
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-    - name: Login to Docker Hub
+    - name: Set up QEMU (optional, multi-arch support)
+      uses: docker/setup-qemu-action@v2
+
+    - name: Set up Docker Buildx (optional, faster builds)
+      uses: docker/setup-buildx-action@v2
+
+    - name: Log in to Docker Hub
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
       run: |
-        echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
-    - name: Build Docker Image
+    - name: Build and tag image
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       run: |
-        IMAGE_TAG=piyushja01/ecom-app:${{ github.run_number }}
-        docker build -t $IMAGE_TAG .
-        echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+        # choose tag strategy: run_number + short sha
+        SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-8)
+        VERSION_TAG="${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
+        IMAGE="${DOCKER_USERNAME}/ecom-app"
+        docker build -t ${IMAGE}:latest -t ${IMAGE}:${VERSION_TAG} .
+        echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
+        echo "VERSION_TAG=${VERSION_TAG}" >> $GITHUB_ENV
 
-    - name: Push Image to Docker Hub
+    - name: Push image tags to Docker Hub
       run: |
-        docker push $IMAGE_TAG
+        docker push ${IMAGE}:latest
+        docker push ${IMAGE}:${VERSION_TAG}
 
-    - name: Pull Image on Local Machine
+    - name: Verify pushed image
       run: |
-        docker pull $IMAGE_TAG
-        docker save $IMAGE_TAG -o /tmp/ecom-app.tar
-        sudo microk8s ctr image import /tmp/ecom-app.tar
-
-    - name: Update Kubernetes Deployment
-      run: |
-        kubectl set image deployment/ecom-deployment \
-        ecom=$IMAGE_TAG -n ecom || true
-
-        kubectl apply -f k8s/ -n ecom
-
-    - name: Wait for Rollout
-      run: kubectl rollout status deployment/ecom-deployment -n ecom
-
-    - name: Show Pods and Services
-      run: |
-        kubectl get pods -n ecom
-        kubectl get svc -n ecom
+        echo "Pushed images:"
+        echo "${IMAGE}:latest"
+        echo "${IMAGE}:${VERSION_TAG}"
