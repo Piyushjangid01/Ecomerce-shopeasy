@@ -1,0 +1,48 @@
+name: Deploy Website on k8s
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Login to Docker Hub
+      run: |
+        echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+    - name: Build Docker Image
+      run: |
+        IMAGE_TAG=piyushja01/ecom-app:${{ github.run_number }}
+        docker build -t $IMAGE_TAG .
+        echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+    - name: Push Image to Docker Hub
+      run: |
+        docker push $IMAGE_TAG
+
+    - name: Pull Image on Local Machine
+      run: |
+        docker pull $IMAGE_TAG
+        docker save $IMAGE_TAG -o /tmp/ecom-app.tar
+        sudo microk8s ctr image import /tmp/ecom-app.tar
+
+    - name: Update Kubernetes Deployment
+      run: |
+        kubectl set image deployment/ecom-deployment \
+        ecom=$IMAGE_TAG -n ecom || true
+
+        kubectl apply -f k8s/ -n ecom
+
+    - name: Wait for Rollout
+      run: kubectl rollout status deployment/ecom-deployment -n ecom
+
+    - name: Show Pods and Services
+      run: |
+        kubectl get pods -n ecom
+        kubectl get svc -n ecom
