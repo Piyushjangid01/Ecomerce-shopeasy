@@ -1,4 +1,4 @@
-name: Build, Push & Deploy
+name: Build → Push → Deploy
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest   
+    runs-on: self-hosted
 
     steps:
     - name: Checkout
@@ -26,6 +26,6 @@ jobs:
 
     - name: Deploy to Kubernetes
       run: |
-        kubectl set image deployment/ecom-deployment ecom=$IMAGE -n ecom || true
         kubectl apply -f k8s/ -n ecom
+        kubectl set image deployment/ecom-deployment ecom=$IMAGE -n ecom
         kubectl rollout status deployment/ecom-deployment -n ecom
